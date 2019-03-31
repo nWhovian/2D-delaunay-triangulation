@@ -1,0 +1,187 @@
+<html>
+
+<head>
+    <title>Delaunay triangulation (2D)</title>
+    <script src="math.min.js"></script>
+</head>
+
+<h1>Delaunay triangulation (2D)</h1>
+
+<canvas id="canvas" width="1024" height="768"></canvas>
+<script type="text/javascript" src="Lanzarote-small.json.js"></script>
+<script type="text/javascript" src="zoompan.js"></script>
+<script type="text/javascript" src="triangulation.js"></script>
+
+<script type="text/javascript">
+    const EXTRA_BUFFER = 10;
+
+    style = {
+        point: {
+            color: "Black",
+            fill: "Black",
+            arc1: 0,
+            arc2: 2 * Math.PI
+        }
+    };
+
+    // This is the actual input
+    var points = inputJSON.points; // Requires inputJSON variable set in file
+    var boundaries = inputJSON.boundaries;
+    var showBoundaries = false;
+
+    var extents = computeExtents(points); // Required to fit points to canvas
+
+    var canvas = document.getElementsByTagName('canvas')[0];
+    var ctx = canvas.getContext('2d');
+
+    style.point.radius = inputJSON.point_radius;
+    style.point.width = inputJSON.point_width;
+
+    var triangles;
+
+    // Computes the point set extents
+    function computeExtents(points) {
+
+        var extents = {
+            "xmin": Number.MAX_VALUE,
+            "xmax": -Number.MAX_VALUE,
+            "ymin": Number.MAX_VALUE,
+            "ymax": -Number.MAX_VALUE
+        };
+
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            if (p.x < extents.xmin) {
+                extents.xmin = p.x;
+            }
+            if (p.y < extents.ymin) {
+                extents.ymin = p.y;
+            }
+            if (p.x > extents.xmax) {
+                extents.xmax = p.x;
+            }
+            if (p.y > extents.ymax) {
+                extents.ymax = p.y;
+            }
+        }
+
+        return extents;
+    }
+
+    // Transforms the coordinates of point to draw it properly in canvas
+    function transformPointToCanvas(p) {
+        // Scales to canvas size
+        var xfact = (canvas.width - 2 * EXTRA_BUFFER) / (extents.xmax - extents.xmin);
+        var yfact = (canvas.height - 2 * EXTRA_BUFFER) / (extents.ymax - extents.ymin);
+        if (xfact < yfact)
+            yfact = xfact;
+        else
+            xfact = yfact;
+        var x = (p.x - extents.xmin) * xfact + EXTRA_BUFFER;
+        var y = (p.y - extents.ymin) * yfact + EXTRA_BUFFER;
+        return {"x": x, "y": canvas.height - y, "z": p.z};
+    }
+
+    // Draws one point as a circle
+    function drawPoint(ctx, style, origP) {
+        var p = transformPointToCanvas(origP);
+        ctx.lineWidth = style.point.width;
+        ctx.strokeStyle = style.point.color;
+        ctx.fillStyle = style.point.fill;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    // Draws triangles that are given in one array, and each triangle is an array of three point indices
+    function drawTriangles(ctx) {
+        if (triangles != null) {
+            for (i = 0; i < triangles.length; i++) {
+                ctx.beginPath();
+                ctx.moveTo(transformPointToCanvas(triangles[i][0]).x, transformPointToCanvas(triangles[i][0]).y);
+
+                ctx.lineTo(transformPointToCanvas(triangles[i][1]).x, transformPointToCanvas(triangles[i][1]).y);
+
+                ctx.lineTo(transformPointToCanvas(triangles[i][2]).x, transformPointToCanvas(triangles[i][2]).y);
+
+                ctx.closePath();
+                ctx.stroke();
+            }
+        }
+    }
+
+    function drawBoundaries(ctx) {
+        var prevColor = ctx.strokeStyle;
+        ctx.strokeStyle = "blue";
+        for (var i = 0; i < boundaries.length; i++) {
+            var b = boundaries[i];
+            if (b.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(transformPointToCanvas(points[b[0]]).x, transformPointToCanvas(points[b[0]]).y);
+                for (var j = 1; j < b.length; ++j) {
+                    ctx.lineTo(transformPointToCanvas(points[b[j]]).x, transformPointToCanvas(points[b[j]]).y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+            }
+        }
+        ctx.strokeStyle = prevColor;
+    }
+
+    // Draws all points
+    function drawPoints(ctx, style, points) {
+        for (var i = 0; i < points.length; i++) {
+            drawPoint(ctx, style, points[i]);
+        }
+    }
+
+    function redraw() {
+        var p1 = ctx.transformedPoint(0, 0);
+        var p2 = ctx.transformedPoint(canvas.width, canvas.height);
+        ctx.clearRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+
+        drawPoints(ctx, style, points);
+        drawTriangles(ctx);
+        if (showBoundaries)
+            drawBoundaries(ctx);
+    }
+
+
+    function doTriangulate() {
+        var t0 = performance.now();
+
+
+        triangles = computeTriangulation(points, boundaries); // This function is in triangulation.js
+        var t1 = performance.now();
+
+        // Log time
+        var string = "Vertices: " + points.length + ". Triangles: " + triangles.length;
+        string += ". Triangulation time: " + (t1 - t0).toFixed(0) + " milliseconds.";
+        console.log(string);
+        document.getElementById("time_label").innerHTML = string;
+        redraw();
+    }
+
+
+</script>
+
+<br><br>
+<button onclick="doTriangulate()">Triangulate</button>
+
+<br>
+<span id="time_label"></span>
+
+<br>
+
+<p><b>Controls</b>: Drag to pan. Click to zoom at that location. Shift-click to zoom out. Mousewheel up/down over the
+    canvas to zoom in to/out from that location.
+    <br><b>Note</b>: points are drawn with flipped y coordinates to simulate upwards y-axis. See function
+    transformPointToCanvas().</p>
+
+</html>
